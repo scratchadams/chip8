@@ -8,3 +8,4 @@ edition = "2018"
 [dependencies]
 hex = "0.4"
 byteorder = "1.4.3"
+sdl2 = "*"

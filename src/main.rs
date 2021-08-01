@@ -1,5 +1,12 @@
 use std::env;
 use std::fs;
+use sdl2::pixels::Color;
+use sdl2::rect::Rect;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::render::WindowCanvas;
+use std::time::Duration;
+
 
 struct Registers {
     V: [u8; 16],
@@ -19,6 +26,12 @@ impl Default for Registers {
     }
 }
 
+
+fn render(canvas: &mut WindowCanvas, color: Color) {
+    canvas.set_draw_color(color);
+    canvas.clear();
+    canvas.present();
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -44,16 +57,31 @@ fn init_memory(chp8_code: &Vec<u8>, memory: &mut [u8; 4096]) {
     }
 }
 
-fn chp8_dissassemble(chp8_code: &Vec<u8>) {    
+fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {    
+    //Memory creation and init
     let mut memory: [u8; 4096];
     memory = [0; 4096];
-
     init_memory(&chp8_code, &mut memory);
-    let iter = memory[0x200..(0x200 + chp8_code.len())].chunks(2);
+
+    //Display Creation and init
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
+
+    let window = video_subsystem.window("Chip8", 800, 600)
+        .position_centered()
+        .build()
+        .expect("could not initialize video subsystem");
+
+    let mut canvas = window.into_canvas().build()
+        .expect("could not make a canvas");
+
+    let mut event_pump = sdl_context.event_pump()?;
+    let mut i = 0;
 
     println!("mem: {:x} and {:x} ", &memory[0x228], &memory[0x229]);
 
     let mut reg = Registers::default();
+    let mut i = 0;
 
     loop {
         let pc = reg.PC as usize;    
@@ -64,11 +92,31 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) {
         println!("pc {:x} instruction {:x} opcode {:x} var {:x}", 
             pc, instruction, opcode, var);
 
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit {..} |
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                    break;
+                },
+                _ => {}
+            }
+        }
+
+        i = (i+1) % 255;
+        canvas.set_draw_color(Color::RGB(255, 210, 0));
+        canvas.fill_rect(Rect::new(10,10,200,100));
+        canvas.present();
+
+        //render(&mut canvas, Color::RGB(i, 64, 255 - i));
+
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+
         match opcode {
             0x01 => {
                 reg.PC = var;
-                println!("pc {:x} jmp to {:x} instruction {:x}", pc, var, instruction);
-                break;
+                println!("pc {:x} jmp to {:x} instruction {:x}", 
+                    pc, var, instruction);
+                //break;
             },
             0x03 => {
                 println!("pc {:x} op {:x} var {:x}", pc, opcode, var);
