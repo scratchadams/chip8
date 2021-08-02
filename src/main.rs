@@ -27,8 +27,13 @@ impl Default for Registers {
 }
 
 
-fn render(canvas: &mut WindowCanvas, color: Color) {
-    canvas.set_draw_color(color);
+fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize, 
+    Y: usize, memory: &mut [u8; 4096], N: usize) {
+   
+   let index = reg.I as usize; 
+    println!("display at X: {} and Y: {} this sprite info: {:x?}", reg.V[X], reg.V[Y],
+        &memory[index..(index+N)]);
+    //should take sprite here and draw it out...but maybe take slice as an arg instead
     canvas.clear();
     canvas.present();
 }
@@ -102,9 +107,8 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             }
         }
 
-        i = (i+1) % 255;
-        canvas.set_draw_color(Color::RGB(255, 210, 0));
-        canvas.fill_rect(Rect::new(10,10,200,100));
+        canvas.set_draw_color(Color::RGB(128, 64, 0));
+        canvas.fill_rect(Rect::new(10,10,8,8));
         canvas.present();
 
         //render(&mut canvas, Color::RGB(i, 64, 255 - i));
@@ -144,6 +148,23 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                 reg.I = var;
                 reg.PC = reg.PC + 2;
                 println!("opcode {:x} variable {:x}", opcode, reg.I);
+            },
+            0x0d => {
+                let var1 = var >> 8;
+                let var2 = (var >> 4) ^ (var1 << 4);
+                let mut N = (var << 12);
+                println!("first N is {:x}", N);
+                N = (N >> 12);
+                println!("then N is {:x}", N);
+
+                reg.PC = reg.PC + 2;
+                
+                display(&mut canvas, &mut reg, (var1 as usize), 
+                    (var2 as usize), &mut memory, (N as usize)); 
+                
+                println!("display at X: {} Y: {} the following: {:b}", 
+                    reg.V[(var1 as usize)], reg.V[(var2 as usize)], 
+                    memory[(reg.I as usize)]);
             },
             _ => { 
                 reg.PC = reg.PC + 2;
