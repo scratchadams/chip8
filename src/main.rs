@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::thread;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::event::Event;
@@ -47,15 +48,15 @@ fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize,
     for byte in &memory[index..(index+N)] {
         for i in 1..=8 {
             if get_bit(*byte, i) == 1 {
-                canvas.set_draw_color(Color::RGB(0,0,0));
+                canvas.set_draw_color(Color::RGB(255,255,25));
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
                 canvas.present();
             } else {
-                canvas.set_draw_color(Color::RGB(255,255,255));
+                canvas.set_draw_color(Color::RGB(0,0,0));
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
                 canvas.present();
             }
-
+            thread::sleep_ms(10);
             x_pos = x_pos + 8;
         }
         x_pos = (reg.V[X] as i32)*8;
@@ -105,7 +106,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
     let mut canvas = window.into_canvas().build()
         .expect("could not make a canvas");
 
-    let mut event_pump = sdl_context.event_pump()?;
+    //let mut event_pump = sdl_context.event_pump()?;
     let mut i = 0;
 
     println!("mem: {:x} and {:x} ", &memory[0x228], &memory[0x229]);
@@ -122,7 +123,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         println!("pc {:x} instruction {:x} opcode {:x} var {:x}", 
             pc, instruction, opcode, var);
 
-        for event in event_pump.poll_iter() {
+        /*for event in event_pump.poll_iter() {
             match event {
                 Event::Quit {..} |
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
@@ -130,7 +131,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                 },
                 _ => {}
             }
-        }
+        }*/
 
         //render(&mut canvas, Color::RGB(i, 64, 255 - i));
 
