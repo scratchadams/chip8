@@ -27,15 +27,40 @@ impl Default for Registers {
 }
 
 
+fn get_bit(byte: u8, pos: u8) -> u8 {
+    if(pos == 8) {
+        return (byte << 7) & 0x1;
+    } 
+    
+   return ((byte >> (8-pos)) & 0x1) as u8;
+}
+
 fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize, 
     Y: usize, memory: &mut [u8; 4096], N: usize) {
    
+   let mut x_pos = (reg.V[X] as i32)*8;
+   let mut y_pos = (reg.V[Y] as i32)*8;
    let index = reg.I as usize; 
-    println!("display at X: {} and Y: {} this sprite info: {:x?}", reg.V[X], reg.V[Y],
+   println!("display at X: {} and Y: {} this sprite info: {:x?}", reg.V[X], reg.V[Y],
         &memory[index..(index+N)]);
-    //should take sprite here and draw it out...but maybe take slice as an arg instead
-    canvas.clear();
-    canvas.present();
+    
+    for byte in &memory[index..(index+N)] {
+        for i in 1..=8 {
+            if get_bit(*byte, i) == 1 {
+                canvas.set_draw_color(Color::RGB(0,0,0));
+                canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
+                canvas.present();
+            } else {
+                canvas.set_draw_color(Color::RGB(255,255,255));
+                canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
+                canvas.present();
+            }
+
+            x_pos = x_pos + 8;
+        }
+        x_pos = (reg.V[X] as i32)*8;
+        y_pos = y_pos + 8;
+    }
 }
 
 fn main() {
@@ -107,10 +132,6 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             }
         }
 
-        canvas.set_draw_color(Color::RGB(128, 64, 0));
-        canvas.fill_rect(Rect::new(10,10,8,8));
-        canvas.present();
-
         //render(&mut canvas, Color::RGB(i, 64, 255 - i));
 
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
@@ -118,8 +139,6 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         match opcode {
             0x01 => {
                 reg.PC = var;
-                println!("pc {:x} jmp to {:x} instruction {:x}", 
-                    pc, var, instruction);
                 //break;
             },
             0x03 => {
@@ -152,10 +171,9 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             0x0d => {
                 let var1 = var >> 8;
                 let var2 = (var >> 4) ^ (var1 << 4);
+
                 let mut N = (var << 12);
-                println!("first N is {:x}", N);
                 N = (N >> 12);
-                println!("then N is {:x}", N);
 
                 reg.PC = reg.PC + 2;
                 
