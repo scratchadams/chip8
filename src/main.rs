@@ -7,10 +7,15 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::render::WindowCanvas;
 use std::time::Duration;
+use rand::Rng;
+use std::process::Command;
 
 
 struct Registers {
     V: [u8; 16],
+    VF: u8,
+    DT: u8,
+    ST: u8,
     I: u16,
     SP: u16,
     PC: u16,
@@ -21,12 +26,33 @@ impl Default for Registers {
         Registers { 
             I: 0,
             V: [0; 16],
+            VF: 0,
+            DT: 0,
+            ST: 0,
             SP: 0xfa0,
             PC: 0x200
         }
     }
 }
 
+const chip8_sprites: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+];
 
 fn get_bit(byte: u8, pos: u8) -> u8 {
     if(pos == 8) {
@@ -56,10 +82,12 @@ fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize,
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
                 canvas.present();
             }
-            thread::sleep_ms(10);
+            thread::sleep_ms(2);
             x_pos = x_pos + 8;
         }
         x_pos = (reg.V[X] as i32)*8;
+        println!("END OF BYTE");
+        //x_pos = x_pos*8;
         y_pos = y_pos + 8;
     }
 }
@@ -80,7 +108,12 @@ fn main() {
 
 fn init_memory(chp8_code: &Vec<u8>, memory: &mut [u8; 4096]) {
     let mut pos = 0;
-    for i in &mut memory[0x0..0x200] { *i = 0x0 }
+    for i in &mut memory[0x0..0x50] { 
+        *i = chip8_sprites[pos];
+        pos = pos + 1; 
+    }
+
+    pos = 0;
     
     for i in &mut memory[0x200..(0x200 + chp8_code.len())] { 
         *i = chp8_code[pos];
@@ -118,62 +151,198 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         let pc = reg.PC as usize;    
         let instruction = ((memory[pc] as u16) << 8) | memory[pc+1] as u16;
         let opcode = memory[pc] >> 4;
-        let var = instruction ^ ((opcode as u16) << 12);
 
-        println!("pc {:x} instruction {:x} opcode {:x} var {:x}", 
-            pc, instruction, opcode, var);
+        let var_nnn = instruction ^ ((opcode as u16) << 12);
+        let var_x = (var_nnn >> 8) as u8;
+        let var_kk = var_nnn as u8; 
+        let var_y = (var_kk >> 4) as u8;
+        let var_z = ((var_kk << 4) >> 4) as u8;
 
-        /*for event in event_pump.poll_iter() {
+        let mut current_key: u8 = 0xff;
+
+        println!("pc {:x} instruction {:x} opcode {:x}", pc, instruction, opcode);
+        println!("var_nnn {:x} var_x {:x} var_y {:x} var_kk {:x}", var_nnn, var_x, var_y, var_kk);
+
+        println!("mem = {:x}  mem+1 = {:x}  mem+2 = {:x}", memory[pc], memory[pc+1], memory[pc+2]);
+
+        let mut event_pump = sdl_context.event_pump()?;
+
+        for event in event_pump.poll_iter() {
             match event {
-                Event::Quit {..} |
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break;
+                Event::Quit {..} => break,
+                Event::KeyDown { keycode: Some(keycode), .. } => {
+                    match keycode {
+                        Keycode::Num1 => current_key = 0x01,
+                        Keycode::Num2 => current_key = 0x02,
+                        Keycode::Num3 => current_key = 0x03,
+                        Keycode::Num4 => current_key = 0x0c,
+                        Keycode::Q => current_key = 0x04,
+                        Keycode::W => current_key = 0x05,
+                        Keycode::E => current_key = 0x06,
+                        Keycode::R => current_key = 0x0d,
+                        Keycode::A => current_key = 0x07,
+                        Keycode::S => current_key = 0x08,
+                        Keycode::D => current_key = 0x09,
+                        Keycode::F => current_key = 0x0e,
+                        Keycode::Z => current_key = 0x0a,
+                        Keycode::X => current_key = 0x00,
+                        Keycode::C => current_key = 0x0b,
+                        Keycode::V => current_key = 0x0f,
+                        _ => break
+
+                    }
                 },
                 _ => {}
             }
-        }*/
+        }
 
         //render(&mut canvas, Color::RGB(i, 64, 255 - i));
 
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
 
         match opcode {
             0x01 => {
-                reg.PC = var;
+                reg.PC = var_nnn;
                 //break;
             },
+            0x02 => {
+               reg.SP = reg.SP + 2;
+               
+               memory[reg.SP as usize] = reg.PC as u8;
+               memory[(reg.SP as usize)+1] =  (reg.PC >> 4) as u8;
+
+               reg.PC = var_nnn; 
+            },
             0x03 => {
-                println!("pc {:x} op {:x} var {:x}", pc, opcode, var);
-                reg.PC = reg.PC + 2;
+                println!("pc {:x} var_x {:x} var_kk {:x}", pc, reg.V[var_x as usize], var_kk);
+                if reg.V[var_x as usize] == var_kk {
+                    reg.PC = reg.PC + 4;
+                } else {
+                    reg.PC = reg.PC + 2;
+                }
+            },
+            0x04 => {
+                if reg.V[var_x as usize] != var_kk {
+                    reg.PC = reg.PC + 4;
+                } else {
+                    reg.PC = reg.PC + 2;
+                }
+            },
+            0x05 => {
+                if var_x == var_y {
+                    reg.PC = reg.PC + 4;
+                } else {
+                    reg.PC = reg.PC + 2;
+                }
             },
             0x06 => {
-                let var2 = var >> 8;
-
-                reg.V[(var2 as usize)] = (((var2 << 8) as u16) ^ var) as u8; 
-                println!("V {:x} = {:x}", var2, reg.V[(var2 as usize)]);
+                reg.V[(var_x as usize)] = var_kk; 
+                println!("V {:x} = {:x}", var_x, reg.V[(var_x as usize)]);
                 reg.PC = reg.PC + 2;
             },
-            0x07 => {
-                let var_i = (var >> 8) as usize;
-                let var2 = (((var >> 8) << 8) ^ var) as u8;  
-                
-                println!("old value for V[{}] is {:x}", var_i, reg.V[var_i]);
-                reg.V[var_i] = reg.V[var_i] + var2;
+            0x07 => {                
+                println!("old value for V[{}] is {:x} and kk {:x}", var_x, reg.V[var_x as usize], var_kk);
+                reg.V[var_x as usize] = reg.V[var_x as usize].wrapping_add(var_kk);
 
                 reg.PC = reg.PC + 2;
-
-                println!("new V[{}] is {:x}", var_i, reg.V[var_i]);
+            },
+            0x08 => {
+                match var_z {
+                    0x00 => {
+                        reg.V[var_x as usize] = reg.V[var_y as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x01 => {
+                        reg.V[var_x as usize] = reg.V[var_x as usize] | reg.V[var_y as usize];
+                        reg.PC = reg.PC + 2; 
+                    },
+                    0x02 => {
+                        reg.V[var_x as usize] = reg.V[var_x as usize] & reg.V[var_y as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x03 => {
+                        reg.V[var_x as usize] = reg.V[var_x as usize] ^ reg.V[var_y as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x04 => {
+                        let temp = (reg.V[var_x as usize] + reg.V[var_y as usize]) as u16;
+                        if temp > 255 {
+                            reg.VF = 1;
+                        } else {
+                            reg.VF = 0;
+                        }
+                        reg.V[var_x as usize] = temp as u8;
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x05 => {
+                        if reg.V[var_x as usize] > reg.V[var_y as usize] {
+                            reg.VF = 1;
+                        } else {
+                            reg.VF = 0;
+                        }
+                        reg.V[var_x as usize] = reg.V[var_x as usize] - reg.V[var_y as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x06 => {
+                        if (reg.V[var_x as usize] & 1) == 1 {
+                            reg.VF = 1;
+                        } else {
+                            reg.VF = 0;
+                        }
+                        reg.V[var_x as usize] = reg.V[var_x as usize] / 2;
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x07 => {
+                        if reg.V[var_y as usize] > reg.V[var_x as usize] {
+                            reg.VF = 1;
+                        } else {
+                            reg.VF = 0;
+                        }
+                        reg.V[var_x as usize] = reg.V[var_y as usize] - reg.V[var_x as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x0E => {
+                        if (reg.V[var_x as usize] & 1) == 1 {
+                            reg.VF = 1;
+                        } else {
+                            reg.VF = 0;
+                        }
+                        reg.V[var_x as usize] = reg.V[var_x as usize] * 2;
+                        reg.PC = reg.PC + 2;
+                    },
+                    _ => {
+                        reg.PC = reg.PC + 2;
+                    },
+                }
+            },
+            0x09 => {
+                if reg.V[var_x as usize] != reg.V[var_y as usize] {
+                    reg.PC = reg.PC + 4;
+                } else {
+                    reg.PC = reg.PC + 2;
+                }
             },
             0x0a => {
-                reg.I = var;
+                reg.I = var_nnn;
                 reg.PC = reg.PC + 2;
                 println!("opcode {:x} variable {:x}", opcode, reg.I);
             },
-            0x0d => {
-                let var1 = var >> 8;
-                let var2 = (var >> 4) ^ (var1 << 4);
+            0x0b => {
+                reg.PC = var_nnn + (reg.V[0] as u16);
+            },
+            0x0c => {
+                let mut rng = rand::thread_rng();
 
-                let mut N = (var << 12);
+                let rnd: u8 = rng.gen();
+                reg.V[var_x as usize] = rnd & var_kk;
+
+                reg.PC = reg.PC + 2;
+            },
+            0x0d => {
+                let var1 = var_nnn >> 8;
+                let var2 = (var_nnn >> 4) ^ (var1 << 4);
+
+                let mut N = (var_nnn << 12);
                 N = (N >> 12);
 
                 reg.PC = reg.PC + 2;
@@ -184,6 +353,69 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                 println!("display at X: {} Y: {} the following: {:b}", 
                     reg.V[(var1 as usize)], reg.V[(var2 as usize)], 
                     memory[(reg.I as usize)]);
+            },
+            0x0e => {
+                if var_kk == 0x9e {
+                    if reg.V[var_x as usize] == current_key {
+                        reg.PC = reg.PC + 4;
+                    } else {
+                        reg.PC = reg.PC + 2;
+                    }
+                } else if var_kk == 0xa1 {
+                    if reg.V[var_x as usize] != current_key {
+                        reg.PC = reg.PC + 4;
+                    } else {
+                        reg.PC = reg.PC + 2;
+                    }
+                } else {
+                    reg.PC = reg.PC + 2;
+                }
+            },
+            0x0f => {
+                match var_kk {
+                    0x07 => {
+                        reg.V[var_x as usize] = reg.DT;
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x0a => {
+                        reg.V[var_x as usize] = current_key;
+                        if current_key != 0xff {
+                            reg.PC = reg.PC + 2;
+                        }
+                    },
+                    0x15 => {
+                        reg.DT = reg.V[var_x as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x18 => {
+                        reg.ST = reg.V[var_x as usize];
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x1e => {
+                        reg.I = reg.I + (reg.V[var_x as usize] as u16);
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x29 => {
+                        reg.I = memory[(var_x*5) as usize] as u16;
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x33 => {
+                        println!("0xFx33 NOT IMPLEMENTED");
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x55 => {
+                        println!("0xFx55 NOT IMPLEMENTED");
+                        reg.PC = reg.PC + 2;
+                    },
+                    0x65 => {
+                        println!("0xFx65 NOT IMPLEMENTED");
+                        reg.PC = reg.PC + 2;
+                    },
+                    _ => {
+                        println!("UNKNOWN 0xF INSTRUCTION");
+                        reg.PC = reg.PC + 2;
+                    }
+                }
             },
             _ => { 
                 reg.PC = reg.PC + 2;
