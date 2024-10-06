@@ -56,7 +56,7 @@ const chip8_sprites: [u8; 80] = [
 
 fn get_bit(byte: u8, pos: u8) -> u8 {
     if(pos == 8) {
-        return (byte << 7) & 0x1;
+        return byte & 0x01;
     } 
     
    return ((byte >> (8-pos)) & 0x1) as u8;
@@ -73,12 +73,13 @@ fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize,
     
     for byte in &memory[index..(index+N)] {
         for i in 1..=8 {
+            println!("get_bit value: {:x}", get_bit(*byte, i));
             if get_bit(*byte, i) == 1 {
                 canvas.set_draw_color(Color::RGB(255,255,25));
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
                 canvas.present();
             } else {
-                canvas.set_draw_color(Color::RGB(0,0,0));
+                canvas.set_draw_color(Color::RGB(0,0,255));
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
                 canvas.present();
             }
@@ -142,7 +143,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
     //let mut event_pump = sdl_context.event_pump()?;
     let mut i = 0;
 
-    println!("mem: {:x} and {:x} ", &memory[0x228], &memory[0x229]);
+    //println!("mem: {:x} and {:x} ", &memory[0x228], &memory[0x229]);
 
     let mut reg = Registers::default();
     let mut i = 0;
@@ -160,10 +161,10 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
 
         let mut current_key: u8 = 0xff;
 
-        println!("pc {:x} instruction {:x} opcode {:x}", pc, instruction, opcode);
-        println!("var_nnn {:x} var_x {:x} var_y {:x} var_kk {:x}", var_nnn, var_x, var_y, var_kk);
+        //println!("pc {:x} instruction {:x} opcode {:x}", pc, instruction, opcode);
+        //println!("var_nnn {:x} var_x {:x} var_y {:x} var_kk {:x}", var_nnn, var_x, var_y, var_kk);
 
-        println!("mem = {:x}  mem+1 = {:x}  mem+2 = {:x}", memory[pc], memory[pc+1], memory[pc+2]);
+        //println!("mem = {:x}  mem+1 = {:x}  mem+2 = {:x}", memory[pc], memory[pc+1], memory[pc+2]);
 
         let mut event_pump = sdl_context.event_pump()?;
 
@@ -214,7 +215,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                reg.PC = var_nnn; 
             },
             0x03 => {
-                println!("pc {:x} var_x {:x} var_kk {:x}", pc, reg.V[var_x as usize], var_kk);
+                //println!("pc {:x} var_x {:x} var_kk {:x}", pc, reg.V[var_x as usize], var_kk);
                 if reg.V[var_x as usize] == var_kk {
                     reg.PC = reg.PC + 4;
                 } else {
@@ -237,11 +238,11 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             },
             0x06 => {
                 reg.V[(var_x as usize)] = var_kk; 
-                println!("V {:x} = {:x}", var_x, reg.V[(var_x as usize)]);
+                //println!("V {:x} = {:x}", var_x, reg.V[(var_x as usize)]);
                 reg.PC = reg.PC + 2;
             },
             0x07 => {                
-                println!("old value for V[{}] is {:x} and kk {:x}", var_x, reg.V[var_x as usize], var_kk);
+                //println!("old value for V[{}] is {:x} and kk {:x}", var_x, reg.V[var_x as usize], var_kk);
                 reg.V[var_x as usize] = reg.V[var_x as usize].wrapping_add(var_kk);
 
                 reg.PC = reg.PC + 2;
@@ -325,7 +326,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             0x0a => {
                 reg.I = var_nnn;
                 reg.PC = reg.PC + 2;
-                println!("opcode {:x} variable {:x}", opcode, reg.I);
+                //println!("opcode {:x} variable {:x}", opcode, reg.I);
             },
             0x0b => {
                 reg.PC = var_nnn + (reg.V[0] as u16);
@@ -339,20 +340,14 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                 reg.PC = reg.PC + 2;
             },
             0x0d => {
-                let var1 = var_nnn >> 8;
-                let var2 = (var_nnn >> 4) ^ (var1 << 4);
-
-                let mut N = (var_nnn << 12);
-                N = (N >> 12);
-
                 reg.PC = reg.PC + 2;
                 
-                display(&mut canvas, &mut reg, (var1 as usize), 
-                    (var2 as usize), &mut memory, (N as usize)); 
+                display(&mut canvas, &mut reg, (var_x as usize), 
+                    (var_y as usize), &mut memory, (var_z as usize)); 
                 
-                println!("display at X: {} Y: {} the following: {:b}", 
-                    reg.V[(var1 as usize)], reg.V[(var2 as usize)], 
-                    memory[(reg.I as usize)]);
+                //println!("display at X: {} Y: {} the following: {:b}", 
+                //    reg.V[(var_x as usize)], reg.V[(var_y as usize)], 
+                //    memory[(reg.I as usize)]);
             },
             0x0e => {
                 if var_kk == 0x9e {
