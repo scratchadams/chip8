@@ -68,12 +68,11 @@ fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize,
    let mut x_pos = (reg.V[X] as i32)*8;
    let mut y_pos = (reg.V[Y] as i32)*8;
    let index = reg.I as usize; 
-   println!("display at X: {} and Y: {} this sprite info: {:x?}", reg.V[X], reg.V[Y],
-        &memory[index..(index+N)]);
+   //println!("display at X: {} and Y: {} this sprite info: {:x?}", reg.V[X], reg.V[Y],
+   //     &memory[index..(index+N)]);
     
     for byte in &memory[index..(index+N)] {
         for i in 1..=8 {
-            println!("get_bit value: {:x}", get_bit(*byte, i));
             if get_bit(*byte, i) == 1 {
                 canvas.set_draw_color(Color::RGB(255,255,25));
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
@@ -87,7 +86,6 @@ fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize,
             x_pos = x_pos + 8;
         }
         x_pos = (reg.V[X] as i32)*8;
-        println!("END OF BYTE");
         //x_pos = x_pos*8;
         y_pos = y_pos + 8;
     }
@@ -161,7 +159,6 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
 
         let mut current_key: u8 = 0xff;
 
-        //println!("pc {:x} instruction {:x} opcode {:x}", pc, instruction, opcode);
         //println!("var_nnn {:x} var_x {:x} var_y {:x} var_kk {:x}", var_nnn, var_x, var_y, var_kk);
 
         //println!("mem = {:x}  mem+1 = {:x}  mem+2 = {:x}", memory[pc], memory[pc+1], memory[pc+2]);
@@ -202,17 +199,39 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
 
         match opcode {
+            0x00 => {
+                if var_kk == 0xe0 {
+                    println!("clear screen");
+                    canvas.clear();
+                    thread::sleep_ms(200);
+                    reg.PC = reg.PC + 2;
+                } else if var_kk == 0xee {
+                    reg.PC = ((memory[reg.SP as usize] as u16) << 8) | (memory[(reg.SP+1) as usize] as u16);
+                    println!("ret to {:x}", reg.PC);
+                    reg.SP = reg.SP - 2;
+                } else {
+                    reg.PC = reg.PC + 2;
+                }
+            },
             0x01 => {
                 reg.PC = var_nnn;
                 //break;
             },
             0x02 => {
-               reg.SP = reg.SP + 2;
-               
-               memory[reg.SP as usize] = reg.PC as u8;
-               memory[(reg.SP as usize)+1] =  (reg.PC >> 4) as u8;
+                
+                //something wonky here....
+                println!("Instruction: {:x} SP: {:x} PC: {:0>8x} memory[SP]: {:x}{:x}", instruction,
+                    reg.SP, reg.PC, memory[reg.SP as usize], memory[(reg.SP+1) as usize]);
 
-               reg.PC = var_nnn; 
+                //increment stack pointah 
+                reg.SP = reg.SP + 2;
+               
+                memory[reg.SP as usize] = ((reg.PC+2) >> 8) as u8;
+                memory[(reg.SP + 1) as usize] =  (reg.PC+2) as u8;
+                println!("SP: {:x} PC: {:0>8x} memory[SP]: {:x}{:x}", 
+                    reg.SP, reg.PC, memory[reg.SP as usize], memory[(reg.SP+1) as usize]);  
+
+                reg.PC = var_nnn; 
             },
             0x03 => {
                 //println!("pc {:x} var_x {:x} var_kk {:x}", pc, reg.V[var_x as usize], var_kk);
@@ -266,7 +285,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         reg.PC = reg.PC + 2;
                     },
                     0x04 => {
-                        let temp = (reg.V[var_x as usize] + reg.V[var_y as usize]) as u16;
+                        let temp = (reg.V[var_x as usize].wrapping_add(reg.V[var_y as usize]) as u16);
                         if temp > 255 {
                             reg.VF = 1;
                         } else {
@@ -281,7 +300,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         } else {
                             reg.VF = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_x as usize] - reg.V[var_y as usize];
+                        reg.V[var_x as usize] = reg.V[var_x as usize].wrapping_sub(reg.V[var_y as usize]);
                         reg.PC = reg.PC + 2;
                     },
                     0x06 => {
@@ -299,7 +318,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         } else {
                             reg.VF = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_y as usize] - reg.V[var_x as usize];
+                        reg.V[var_x as usize] = reg.V[var_y as usize].wrapping_sub(reg.V[var_x as usize]);
                         reg.PC = reg.PC + 2;
                     },
                     0x0E => {
@@ -308,7 +327,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         } else {
                             reg.VF = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_x as usize] * 2;
+                        reg.V[var_x as usize] = reg.V[var_x as usize].wrapping_mul(2);
                         reg.PC = reg.PC + 2;
                     },
                     _ => {
@@ -395,19 +414,30 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         reg.PC = reg.PC + 2;
                     },
                     0x33 => {
-                        println!("0xFx33 NOT IMPLEMENTED");
+                        let mut dec: u8 = reg.V[var_x as usize];
+                        memory[reg.I as usize] = dec % 10;
+                        dec = dec / 10;
+                        memory[(reg.I+1) as usize] = dec % 10;
+                        dec = dec / 10;
+                        memory[(reg.I+1) as usize] = dec % 10;
+
                         reg.PC = reg.PC + 2;
                     },
                     0x55 => {
-                        println!("0xFx55 NOT IMPLEMENTED");
+                        for i in 0..=var_x {
+                            memory[(reg.I + (i as u16)) as usize] = reg.V[i as usize];
+                        }
                         reg.PC = reg.PC + 2;
                     },
                     0x65 => {
-                        println!("0xFx65 NOT IMPLEMENTED");
+                        for i in 0..=var_x {
+                            reg.V[i as usize] = memory[(reg.I + (i as u16)) as usize];
+                        }
                         reg.PC = reg.PC + 2;
                     },
                     _ => {
-                        println!("UNKNOWN 0xF INSTRUCTION");
+                        println!("UNKNOWN 0xF INSTRUCTION {:x} at position {:x}", instruction, reg.PC);
+                        thread::sleep_ms(200);
                         reg.PC = reg.PC + 2;
                     }
                 }
