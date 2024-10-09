@@ -348,18 +348,18 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         let v_x = reg.V[var_x as usize];
                         let v_y = reg.V[var_y as usize];
 
-                        let temp = reg.V[var_x as usize].wrapping_sub(reg.V[var_y as usize]);
+                        let temp = v_x.wrapping_sub(v_y);
 
                         reg.V[var_x as usize] = temp;
 
-                        if v_x > v_y {
+                        if v_x >= v_y {
                             reg.V[0xF] = 1;
                         } else {
                             reg.V[0xF] = 0;
                         }
 
                         reg.PC = reg.PC + 2;
-                        println!("8x5 VF value {}", reg.V[0xF]);
+                        println!("8x5 VF value {} and vx {} and vy {} and v[x] {}", reg.V[0xF], v_x, v_y, reg.V[var_x as usize]);
                     },
                     0x06 => {
                         //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
@@ -389,7 +389,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         let temp = reg.V[var_y as usize].wrapping_sub(reg.V[var_x as usize]);
                         reg.V[var_x as usize] = temp;
 
-                        if v_y > v_x {
+                        if v_y >= v_x {
                             reg.V[0xF] = 1;
                         } else {
                             reg.V[0xF] = 0;
