@@ -6,14 +6,11 @@ use sdl2::rect::Rect;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::render::WindowCanvas;
-use std::time::Duration;
 use rand::Rng;
-use std::process::Command;
 
 
 struct Registers {
     V: [u8; 16],
-    VF: u8,
     DT: u8,
     ST: u8,
     I: u16,
@@ -26,7 +23,6 @@ impl Default for Registers {
         Registers { 
             I: 0,
             V: [0; 16],
-            VF: 0,
             DT: 0,
             ST: 0,
             SP: 0xfa0,
@@ -60,6 +56,32 @@ fn get_bit(byte: u8, pos: u8) -> u8 {
     } 
     
    return ((byte >> (8-pos)) & 0x1) as u8;
+}
+
+fn update_display_mem(display_mem: &mut [[u8; 64]; 128], reg: &mut Registers, X: usize, 
+    Y: usize, memory: &mut [u8; 4096], N: usize) {
+
+    let mut x_pos = reg.V[X] as usize;
+    let mut y_pos = reg.V[Y] as usize;
+    let index = reg.I as usize; 
+
+    for byte in &memory[index..(index+N)] {
+        for i in 1..=8 {
+            //println!("xy value {:x} xor value {:x}",display_mem[x_pos][y_pos], (display_mem[x_pos][y_pos] as u8) ^ (get_bit(*byte, i) as u8));
+            if (display_mem[x_pos][y_pos] == 0x1) && ((display_mem[x_pos][y_pos] as u8) ^ (get_bit(*byte, i) as u8) == 0x0)  {
+                reg.V[0xF] = 1;
+            } else {
+                reg.V[0xF] = 0;
+            }
+            //println!("display VF value {:x}", reg.V[0xF]);
+
+            display_mem[x_pos][y_pos] = (display_mem[x_pos][y_pos] as u8) ^ (get_bit(*byte, i) as u8);
+            //println!("display xor result {:x}", display_mem[x_pos][y_pos]);
+            x_pos = x_pos+1;
+        }
+        y_pos = y_pos+1;
+        x_pos = reg.V[X] as usize;
+    }
 }
 
 fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize, 
@@ -126,6 +148,9 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
     memory = [0; 4096];
     init_memory(&chp8_code, &mut memory);
 
+    //Display Memory
+    let mut display_mem = [[0u8; 64]; 128];
+
     //Display Creation and init
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -158,6 +183,10 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         let var_z = ((var_kk << 4) >> 4) as u8;
 
         let mut current_key: u8 = 0xff;
+        let mut display_updated: bool = false;
+
+        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} Vx: {:x} Vy: {:x}", instruction,
+        //    reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
 
         //println!("var_nnn {:x} var_x {:x} var_y {:x} var_kk {:x}", var_nnn, var_x, var_y, var_kk);
 
@@ -202,12 +231,13 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             0x00 => {
                 if var_kk == 0xe0 {
                     println!("clear screen");
+                    display_mem = [[0u8; 64]; 128];
                     canvas.clear();
-                    thread::sleep_ms(200);
+                    
                     reg.PC = reg.PC + 2;
                 } else if var_kk == 0xee {
                     reg.PC = ((memory[reg.SP as usize] as u16) << 8) | (memory[(reg.SP+1) as usize] as u16);
-                    println!("ret to {:x}", reg.PC);
+                    //println!("ret to {:x}", reg.PC);
                     reg.SP = reg.SP - 2;
                 } else {
                     reg.PC = reg.PC + 2;
@@ -220,16 +250,16 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             0x02 => {
                 
                 //something wonky here....
-                println!("Instruction: {:x} SP: {:x} PC: {:0>8x} memory[SP]: {:x}{:x}", instruction,
-                    reg.SP, reg.PC, memory[reg.SP as usize], memory[(reg.SP+1) as usize]);
+                //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} memory[SP]: {:x}{:x}", instruction,
+                //    reg.SP, reg.PC, memory[reg.SP as usize], memory[(reg.SP+1) as usize]);
 
                 //increment stack pointah 
                 reg.SP = reg.SP + 2;
                
                 memory[reg.SP as usize] = ((reg.PC+2) >> 8) as u8;
                 memory[(reg.SP + 1) as usize] =  (reg.PC+2) as u8;
-                println!("SP: {:x} PC: {:0>8x} memory[SP]: {:x}{:x}", 
-                    reg.SP, reg.PC, memory[reg.SP as usize], memory[(reg.SP+1) as usize]);  
+                //println!("SP: {:x} PC: {:0>8x} memory[SP]: {:x}{:x}", 
+                //    reg.SP, reg.PC, memory[reg.SP as usize], memory[(reg.SP+1) as usize]);  
 
                 reg.PC = var_nnn; 
             },
@@ -285,50 +315,108 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         reg.PC = reg.PC + 2;
                     },
                     0x04 => {
-                        let temp = (reg.V[var_x as usize].wrapping_add(reg.V[var_y as usize]) as u16);
-                        if temp > 255 {
-                            reg.VF = 1;
-                        } else {
-                            reg.VF = 0;
-                        }
+                        println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                                reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+                        
+                        let v_x = reg.V[var_x as usize] as u16;
+                        let v_y = reg.V[var_y as usize] as u16;
+
+                        //let temp: u16 = reg.V[var_x as usize].wrapping_add(reg.V[var_y as usize]) as u16;
+                        
+                        let temp = v_x.wrapping_add(v_y);
+                        let temp2 = (reg.V[var_x as usize] as u32 + reg.V[var_y as usize] as u32) as u32;
+
                         reg.V[var_x as usize] = temp as u8;
+
+                        println!("sum of operation {} {}", temp, temp2);
+
+                        if temp2 > 255 {
+                            reg.V[0xF] = 1;
+                        } else {
+                            reg.V[0xF] = 0;
+                        }
+                        
                         reg.PC = reg.PC + 2;
+
+                        println!("8x4 VF value {}", reg.V[0xF]);
                     },
                     0x05 => {
-                        if reg.V[var_x as usize] > reg.V[var_y as usize] {
-                            reg.VF = 1;
+                        println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                                reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+
+                        //println!("8x5 compare {}", reg.V[var_x as usize] > reg.V[var_y as usize]);
+                        let v_x = reg.V[var_x as usize];
+                        let v_y = reg.V[var_y as usize];
+
+                        let temp = reg.V[var_x as usize].wrapping_sub(reg.V[var_y as usize]);
+
+                        reg.V[var_x as usize] = temp;
+
+                        if v_x > v_y {
+                            reg.V[0xF] = 1;
                         } else {
-                            reg.VF = 0;
+                            reg.V[0xF] = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_x as usize].wrapping_sub(reg.V[var_y as usize]);
+
                         reg.PC = reg.PC + 2;
+                        println!("8x5 VF value {}", reg.V[0xF]);
                     },
                     0x06 => {
-                        if (reg.V[var_x as usize] & 1) == 1 {
-                            reg.VF = 1;
+                        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                        //        reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+
+                        //println!("lsb value: {:x}", reg.V[var_x as usize] & 1);
+                        let v_x = reg.V[var_x as usize];
+                        let v_y = reg.V[var_y as usize];
+
+                        let temp = reg.V[var_x as usize] / 2;
+                        reg.V[var_x as usize] = temp;
+
+                        if (v_x & 1) == 1 {
+                            reg.V[0xF] = 1;
                         } else {
-                            reg.VF = 0;
+                            reg.V[0xF] = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_x as usize] / 2;
                         reg.PC = reg.PC + 2;
+                        //println!("8x6 VF value {}", reg.V[0xF]);
                     },
                     0x07 => {
-                        if reg.V[var_y as usize] > reg.V[var_x as usize] {
-                            reg.VF = 1;
+                        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                        //       reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+                        let v_x = reg.V[var_x as usize];
+                        let v_y = reg.V[var_y as usize];
+
+                        let temp = reg.V[var_y as usize].wrapping_sub(reg.V[var_x as usize]);
+                        reg.V[var_x as usize] = temp;
+
+                        if v_y > v_x {
+                            reg.V[0xF] = 1;
                         } else {
-                            reg.VF = 0;
+                            reg.V[0xF] = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_y as usize].wrapping_sub(reg.V[var_x as usize]);
+                        
                         reg.PC = reg.PC + 2;
+                        //println!("8x7 VF value {}", reg.V[0xF]);
                     },
                     0x0E => {
-                        if (reg.V[var_x as usize] & 1) == 1 {
-                            reg.VF = 1;
+                        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                        //        reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+
+                        //println!("8xE and operation {:x}", reg.V[var_x as usize] & 0x80);
+                        let v_x = reg.V[var_x as usize];
+                        let v_y = reg.V[var_y as usize];
+                        
+                        let temp = reg.V[var_x as usize].wrapping_mul(2);
+                        reg.V[var_x as usize] = temp;
+
+                        if (v_x & 0x80) == 0x80 {
+                            reg.V[0xF] = 1;
                         } else {
-                            reg.VF = 0;
+                            reg.V[0xF] = 0;
                         }
-                        reg.V[var_x as usize] = reg.V[var_x as usize].wrapping_mul(2);
+                        
                         reg.PC = reg.PC + 2;
+                        //println!("8xE VF value {}", reg.V[0xF]);
                     },
                     _ => {
                         reg.PC = reg.PC + 2;
@@ -360,6 +448,9 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             },
             0x0d => {
                 reg.PC = reg.PC + 2;
+
+                update_display_mem(&mut display_mem, &mut reg, (var_x as usize), 
+                    (var_y as usize), &mut memory, (var_z as usize));
                 
                 display(&mut canvas, &mut reg, (var_x as usize), 
                     (var_y as usize), &mut memory, (var_z as usize)); 
@@ -415,11 +506,14 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                     },
                     0x33 => {
                         let mut dec: u8 = reg.V[var_x as usize];
+
+                        memory[(reg.I+2) as usize] = dec % 10;
+                        dec = dec / 10;
+
+                        memory[(reg.I+1) as usize] = dec % 10;
+                        dec = dec / 10;
+
                         memory[reg.I as usize] = dec % 10;
-                        dec = dec / 10;
-                        memory[(reg.I+1) as usize] = dec % 10;
-                        dec = dec / 10;
-                        memory[(reg.I+1) as usize] = dec % 10;
 
                         reg.PC = reg.PC + 2;
                     },
@@ -437,7 +531,6 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                     },
                     _ => {
                         println!("UNKNOWN 0xF INSTRUCTION {:x} at position {:x}", instruction, reg.PC);
-                        thread::sleep_ms(200);
                         reg.PC = reg.PC + 2;
                     }
                 }
