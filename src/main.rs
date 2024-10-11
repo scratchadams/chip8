@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
 use std::thread;
+use std::io;
+use ratatui::layout::Alignment;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::event::Event;
@@ -8,6 +10,17 @@ use sdl2::keyboard::Keycode;
 use sdl2::render::WindowCanvas;
 use rand::Rng;
 
+use ratatui::{
+    crossterm::event::{self, Event as tuiEvent},
+    text::{Line, Text},
+    style::Stylize,
+    symbols::border,
+    widgets:: {
+        block::{Position, Title},
+        Block, Paragraph, Widget,
+    },
+    Frame,
+};
 
 struct Registers {
     V: [u8; 16],
@@ -49,6 +62,18 @@ const chip8_sprites: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
     0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 ];
+
+fn reg_state(reg: &mut Registers) {
+    println!("PC - {:x}", reg.PC);
+    println!("SP - {:x}", reg.SP);
+    println!("ST - {:x}", reg.ST);
+    println!("DT - {:x}", reg.DT);
+    println!("I  - {:x}", reg.I);
+
+    for i in 0..16 {
+        println!("V[{}] - {:x}", i, reg.V[i]);
+    }
+}
 
 fn get_bit(byte: u8, pos: u8) -> u8 {
     if(pos == 8) {
@@ -104,7 +129,7 @@ fn display(canvas: &mut WindowCanvas, reg: &mut Registers, X: usize,
                 canvas.fill_rect(Rect::new(x_pos, y_pos, 8, 8));
                 canvas.present();
             }
-            thread::sleep_ms(2);
+            thread::sleep_ms(1);
             x_pos = x_pos + 8;
         }
         x_pos = (reg.V[X] as i32)*8;
@@ -120,11 +145,10 @@ fn main() {
     let chp8_file_contents = fs::read(chp8_file)
         .expect("Something went wrong with reading the file");
 
+
     println!("{:#?}", args);
     
-    chp8_dissassemble(&chp8_file_contents);
-
-
+    chp8_execute(&chp8_file_contents);
 }
 
 fn init_memory(chp8_code: &Vec<u8>, memory: &mut [u8; 4096]) {
@@ -142,7 +166,7 @@ fn init_memory(chp8_code: &Vec<u8>, memory: &mut [u8; 4096]) {
     }
 }
 
-fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {    
+fn chp8_execute(chp8_code: &Vec<u8>) -> Result<(), String> {    
     //Memory creation and init
     let mut memory: [u8; 4096];
     memory = [0; 4096];
@@ -163,13 +187,12 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
     let mut canvas = window.into_canvas().build()
         .expect("could not make a canvas");
 
-    //let mut event_pump = sdl_context.event_pump()?;
-    let mut i = 0;
-
-    //println!("mem: {:x} and {:x} ", &memory[0x228], &memory[0x229]);
 
     let mut reg = Registers::default();
     let mut i = 0;
+
+    let mut terminal = ratatui::init();
+    
 
     loop {
         let pc = reg.PC as usize;    
@@ -183,14 +206,6 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         let var_z = ((var_kk << 4) >> 4) as u8;
 
         let mut current_key: u8 = 0xff;
-        let mut display_updated: bool = false;
-
-        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} Vx: {:x} Vy: {:x}", instruction,
-        //    reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
-
-        //println!("var_nnn {:x} var_x {:x} var_y {:x} var_kk {:x}", var_nnn, var_x, var_y, var_kk);
-
-        //println!("mem = {:x}  mem+1 = {:x}  mem+2 = {:x}", memory[pc], memory[pc+1], memory[pc+2]);
 
         let mut event_pump = sdl_context.event_pump()?;
 
@@ -226,14 +241,31 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
         //render(&mut canvas, Color::RGB(i, 64, 255 - i));
 
         //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        terminal.draw(|frame: &mut Frame| {
+                let title = Title::from(" CHIP-8 DEBUG ".bold());
+
+                let block = Block::bordered()
+                    .title(title.alignment(Alignment::Center))
+                    .border_set(border::THICK);
+
+
+                frame.render_widget(
+                    Paragraph::new("testin123").block(block),
+                    frame.area(),
+                );
+            }).expect("failed to draw");
+
 
         match opcode {
             0x00 => {
                 if var_kk == 0xe0 {
-                    println!("clear screen");
+                    //println!("clear screen");
+                    //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} Vx: {:x} Vy: {:x}", instruction,
+                    //    reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+
                     display_mem = [[0u8; 64]; 128];
                     canvas.clear();
-                    
+
                     reg.PC = reg.PC + 2;
                 } else if var_kk == 0xee {
                     reg.PC = ((memory[reg.SP as usize] as u16) << 8) | (memory[(reg.SP+1) as usize] as u16);
@@ -315,8 +347,8 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         reg.PC = reg.PC + 2;
                     },
                     0x04 => {
-                        println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
-                                reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+                        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                        //        reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
                         
                         let v_x = reg.V[var_x as usize] as u16;
                         let v_y = reg.V[var_y as usize] as u16;
@@ -328,7 +360,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
 
                         reg.V[var_x as usize] = temp as u8;
 
-                        println!("sum of operation {} {}", temp, temp2);
+                        //println!("sum of operation {} {}", temp, temp2);
 
                         if temp2 > 255 {
                             reg.V[0xF] = 1;
@@ -338,11 +370,11 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         
                         reg.PC = reg.PC + 2;
 
-                        println!("8x4 VF value {}", reg.V[0xF]);
+                        //println!("8x4 VF value {}", reg.V[0xF]);
                     },
                     0x05 => {
-                        println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
-                                reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
+                        //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
+                        //        reg.SP, reg.PC, reg.V[var_x as usize], reg.V[var_y as usize]);
 
                         //println!("8x5 compare {}", reg.V[var_x as usize] > reg.V[var_y as usize]);
                         let v_x = reg.V[var_x as usize];
@@ -359,7 +391,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                         }
 
                         reg.PC = reg.PC + 2;
-                        println!("8x5 VF value {} and vx {} and vy {} and v[x] {}", reg.V[0xF], v_x, v_y, reg.V[var_x as usize]);
+                        //println!("8x5 VF value {} and vx {} and vy {} and v[x] {}", reg.V[0xF], v_x, v_y, reg.V[var_x as usize]);
                     },
                     0x06 => {
                         //println!("Instruction: {:x} SP: {:x} PC: {:0>8x} x-value {} y-value {}", instruction,
@@ -433,7 +465,7 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
             0x0a => {
                 reg.I = var_nnn;
                 reg.PC = reg.PC + 2;
-                //println!("opcode {:x} variable {:x}", opcode, reg.I);
+                //println!("opcode {:x} variable reg.I {:x}", opcode, reg.I);
             },
             0x0b => {
                 reg.PC = var_nnn + (reg.V[0] as u16);
@@ -539,7 +571,6 @@ fn chp8_dissassemble(chp8_code: &Vec<u8>) -> Result<(), String> {
                 reg.PC = reg.PC + 2;
             },
         }
-
     }
 
 }
