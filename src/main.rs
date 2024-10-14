@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::thread;
 use std::io;
+use std::fmt::Write;
 use ratatui::layout::Alignment;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -41,6 +42,20 @@ impl Default for Registers {
             SP: 0xfa0,
             PC: 0x200
         }
+    }
+}
+
+impl Registers {
+    fn to_text(&self) -> String {
+        let mut reg_string = "".to_string();
+
+        for i in 0..self.V.len() {
+            write!(reg_string, "V[{}] - {:x}\n",i, self.V[i])
+                .unwrap();
+        }
+
+        reg_string
+
     }
 }
 
@@ -250,9 +265,15 @@ fn chp8_execute(chp8_code: &Vec<u8>) -> Result<(), String> {
 
 
                 frame.render_widget(
-                    Paragraph::new("testin123").block(block),
+                    Paragraph::new(reg.to_text()).block(block.clone()).alignment(Alignment::Left),
                     frame.area(),
                 );
+
+                frame.render_widget(
+                    Paragraph::new(reg.to_text()).block(block.clone()).alignment(Alignment::Center),
+                    frame.area(),
+                );
+
             }).expect("failed to draw");
 
 
